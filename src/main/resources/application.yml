@@ -1,0 +1,35 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: report-service
+
+  r2dbc:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+  kafka:
+    bootstrap-servers: pkc-p11xm.us-east-1.aws.confluent.cloud:9092
+    properties:
+      security.protocol: SASL_SSL
+      sasl.mechanism: PLAIN
+      sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required username="CGV6CPJS3KIXKI7X" password="ZjaXJVqPa1YFD0v6JL64a6HnifJricQlpUBQoWxK79PLm3wiIQ8XTEvfcs2ItSgP";
+    consumer:
+      group-id: report-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://securetoken.google.com/security-prs1
+
+logging:
+  level:
+    root: INFO
+    org.springframework.kafka: DEBUG
+    pe.edu.vallegrande.report_service: DEBUG
