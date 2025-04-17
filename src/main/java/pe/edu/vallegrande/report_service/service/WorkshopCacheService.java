@@ -17,11 +17,11 @@ public class WorkshopCacheService {
     private final WorkshopCacheRepository repository;
 
     /**
-     * 🔸 Lista talleres filtrando por status (A o I)
+     * 🔸 Lista talleres del cache, con filtro opcional por status.
      */
     public Flux<WorkshopCache> findAll(String status) {
         return repository.findAll()
-                         .filter(workshop -> status == null || workshop.getStatus().equalsIgnoreCase(status));
+                .filter(workshop -> status == null || workshop.getStatus().equalsIgnoreCase(status));
     }
 
     /**
@@ -31,3 +31,4 @@ public class WorkshopCacheService {
         return repository.findById(id);
     }
 }
+
