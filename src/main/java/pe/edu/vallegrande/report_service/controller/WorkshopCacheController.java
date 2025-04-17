@@ -17,9 +17,9 @@ public class WorkshopCacheController {
     /**
      * 🔹 Listar todos los talleres del cache.
      */
-    @GetMapping
-    public Flux<WorkshopCache> getAll() {
-        return service.findAll();
+ @GetMapping
+    public Flux<WorkshopCache> getAll(@RequestParam(required = false) String status) {
+        return service.findAll(status);
     }
 
     /**
