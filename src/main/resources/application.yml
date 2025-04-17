@@ -11,14 +11,15 @@ spring:
     password: ${DB_PASSWORD}
 
   kafka:
-    bootstrap-servers: pkc-p11xm.us-east-1.aws.confluent.cloud:9092
+    bootstrap-servers: ${BOOSTRAP_SERVER}
     properties:
       security.protocol: SASL_SSL
       sasl.mechanism: PLAIN
-      sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required username="CGV6CPJS3KIXKI7X" password="ZjaXJVqPa1YFD0v6JL64a6HnifJricQlpUBQoWxK79PLm3wiIQ8XTEvfcs2ItSgP";
+      sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_USERNAME}" password="${KAFKA_PASSWORD}";
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
     consumer:
-      group-id: report-service
-      auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
