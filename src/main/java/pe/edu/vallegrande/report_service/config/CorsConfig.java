@@ -3,25 +3,38 @@ package pe.edu.vallegrande.report_service.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.reactive.CorsWebFilter;
+import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
+import org.springframework.web.cors.reactive.CorsWebFilter;
 
-/**
- * Habilita CORS para aceptar peticiones del frontend (localhost:4200) en este microservicio.
- */
+import java.util.List;
+
 @Configuration
 public class CorsConfig {
 
+    // Define la configuración CORS para permitir solicitudes desde el frontend
     @Bean
-    public CorsWebFilter corsWebFilter() {
+    public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.addAllowedOrigin("http://localhost:4200");
-        config.addAllowedMethod("*");
-        config.addAllowedHeader("*");
+        config.setAllowedOrigins(List.of("http://localhost:4200"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setExposedHeaders(List.of("Authorization"));
         config.setAllowCredentials(true);
+        config.setMaxAge(3600L);
 
+        // Aplica esta configuración a todas las rutas
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
+        return source;
+    }
+
+    // Crea el filtro que intercepta y aplica la configuración CORS
+    @Bean
+    public CorsWebFilter corsWebFilter(CorsConfigurationSource corsConfigurationSource) {
+        return new CorsWebFilter(corsConfigurationSource);
+    }
+}registerCorsConfiguration("/**", config);
 
         return new CorsWebFilter(source);
     }
