@@ -31,4 +31,3 @@ public class WorkshopCacheService {
         return repository.findById(id);
     }
 }
-

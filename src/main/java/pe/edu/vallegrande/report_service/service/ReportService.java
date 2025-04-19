@@ -14,8 +14,10 @@ import pe.edu.vallegrande.report_service.repository.WorkshopCacheRepository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -25,6 +27,8 @@ public class ReportService {
     private final ReportRepository reportRepo;
     private final ReportWorkshopRepository workshopRepo;
     private final WorkshopCacheRepository workshopCacheRepo;
+    private final SupabaseStorageService storageService;
+
 
     /**
      * 🔹 Obtener reportes con talleres filtrados por fecha + otros filtros
@@ -112,33 +116,60 @@ public class ReportService {
         });
     }
 
-
     /**
      * 🔹 Crear reporte con talleres
      */
     public Mono<ReportWithWorkshopsDto> create(ReportWithWorkshopsDto dto) {
         Report report = fromDto(dto.getReport());
-        report.setStatus("A"); // 🔐 Forzar estado activo al crear
+        report.setStatus("A");
 
         List<ReportWorkshop> workshops = dto.getWorkshops().stream()
                 .map(this::fromWorkshopDto)
                 .collect(Collectors.toList());
 
-        return reportRepo.save(report)
-                .flatMap(saved -> {
-                    workshops.forEach(w -> w.setReportId(saved.getId()));
-                    return workshopRepo.saveAll(workshops)
+        String rawSchedule = dto.getReport().getSchedule();
+
+        Mono<String> scheduleMono;
+        if (rawSchedule == null) {
+            scheduleMono = Mono.just(""); // o Mono.empty() si prefieres
+        } else if (isBase64(rawSchedule)) {
+            scheduleMono = storageService.uploadBase64Image("reports/schedules", rawSchedule);
+        } else {
+            scheduleMono = Mono.just(rawSchedule);
+        }
+
+        return scheduleMono.flatMap(scheduleUrl -> {
+            report.setSchedule(scheduleUrl);
+
+            return reportRepo.save(report)
+                    .flatMap(saved -> Flux.fromIterable(workshops)
+                            .flatMap(workshop -> Flux.fromIterable(dto.getWorkshops())
+                                    .filter(dtoW -> dtoW.getWorkshopId().equals(workshop.getWorkshopId()))
+                                    .next()
+                                    .flatMapMany(dtoW -> Flux.fromIterable(Arrays.asList(dtoW.getImageUrl()))
+                                            .flatMap(image -> isBase64(image)
+                                                    ? storageService.uploadBase64Image("reports/workshops", image)
+                                                    : Mono.just(image)
+                                            )
+                                    )
+                                    .collectList()
+                                    .map(urls -> {
+                                        workshop.setReportId(saved.getId());
+                                        workshop.setImageUrl(urls.toArray(new String[0]));
+                                        return workshop;
+                                    })
+                            )
                             .collectList()
+                            .flatMap(savedWorkshops -> workshopRepo.saveAll(savedWorkshops).collectList())
                             .map(savedWorkshops -> {
                                 ReportWithWorkshopsDto response = new ReportWithWorkshopsDto();
                                 response.setReport(toDto(saved));
-                                response.setWorkshops(savedWorkshops.stream().map(this::toWorkshopDto).collect(Collectors.toList()));
+                                response.setWorkshops(savedWorkshops.stream().map(this::toWorkshopDto).toList());
                                 log.info("✅ Reporte creado: {}", response);
                                 return response;
-                            });
-                });
+                            }));
+        });
     }
-
 
     /**
      * 🔹 Editar reporte y reemplazar talleres
@@ -149,31 +180,73 @@ public class ReportService {
                     existing.setYear(dto.getReport().getYear());
                     existing.setTrimester(dto.getReport().getTrimester());
                     existing.setDescription(dto.getReport().getDescription());
-                    existing.setSchedule(dto.getReport().getSchedule());
 
-                    return reportRepo.save(existing)
-                            .flatMap(saved -> {
-                                List<ReportWorkshop> workshops = dto.getWorkshops().stream()
-                                        .map(w -> {
-                                            ReportWorkshop rw = fromWorkshopDto(w);
-                                            rw.setReportId(saved.getId());
-                                            rw.setId(null); // ✅ Forzar INSERT, evitar UPDATE fallido
-                                            return rw;
-                                        }).toList();
+                    String rawSchedule = dto.getReport().getSchedule();
+                    Mono<String> scheduleMono = rawSchedule == null
+                            ? Mono.just(existing.getSchedule())
+                            : isBase64(rawSchedule)
+                            ? storageService.uploadBase64Image("reports/schedules", rawSchedule)
+                            : Mono.just(rawSchedule);
 
-                                return workshopRepo.deleteByReportId(id)
-                                        .then(workshopRepo.saveAll(workshops).collectList())
+                    return scheduleMono.flatMap(scheduleUrl -> {
+                        existing.setSchedule(scheduleUrl);
+
+                        return workshopRepo.findByReportId(id)
+                                .collectList()
+                                .flatMap(oldWorkshops -> {
+                                    // Obtener todas las URLs antiguas
+                                    List<String> oldUrls = oldWorkshops.stream()
+                                            .flatMap(rw -> rw.getImageUrl() == null ?
+                                                    Stream.empty() :
+                                                    Arrays.stream(rw.getImageUrl()))
+                                            .collect(Collectors.toList());
+
+                                    // Obtener nuevas URLs desde el DTO
+                                    List<String> newUrls = dto.getWorkshops().stream()
+                                            .flatMap(w -> w.getImageUrl() == null ?
+                                                    Stream.empty() :
+                                                    Arrays.stream(w.getImageUrl()))
+                                            .collect(Collectors.toList());
+
+                                    // Determinar cuáles eliminar
+                                    List<String> toDelete = oldUrls.stream()
+                                            .filter(url -> !newUrls.contains(url))
+                                            .collect(Collectors.toList());
+
+                                    // Ejecutar eliminación en Supabase
+                                    return Flux.fromIterable(toDelete)
+                                            .flatMap(storageService::deleteImage)
+                                            .then();
+                                })
+                                .then(reportRepo.save(existing))
+                                .flatMap(saved -> Flux.fromIterable(dto.getWorkshops())
+                                        .flatMap(dtoW -> Flux.fromIterable(Arrays.asList(dtoW.getImageUrl()))
+                                                .flatMap(image -> isBase64(image)
+                                                        ? storageService.uploadBase64Image("reports/workshops", image)
+                                                        : Mono.just(image)
+                                                )
+                                                .collectList()
+                                                .map(urls -> {
+                                                    ReportWorkshop rw = fromWorkshopDto(dtoW);
+                                                    rw.setReportId(saved.getId());
+                                                    rw.setId(null); // Forzar INSERT
+                                                    rw.setImageUrl(urls.toArray(new String[0]));
+                                                    return rw;
+                                                })
+                                        )
+                                        .collectList()
+                                        .flatMap(newList -> workshopRepo.deleteByReportId(id)
+                                                .then(workshopRepo.saveAll(newList).collectList()))
                                         .map(savedWorkshops -> {
                                             ReportWithWorkshopsDto response = new ReportWithWorkshopsDto();
                                             response.setReport(toDto(saved));
                                             response.setWorkshops(savedWorkshops.stream().map(this::toWorkshopDto).toList());
-                                            log.info("✏️ Reporte actualizado: {}", response);
+                                            log.info("✏️ Reporte actualizado con limpieza de imágenes: {}", response);
                                             return response;
-                                        });
-                            });
+                                        }));
+                    });
                 });
     }
-
 
     /**
      * 🔹 Restaurar reporte (status = A)
@@ -242,5 +315,9 @@ public class ReportService {
                 .description(dto.getDescription())
                 .imageUrl(dto.getImageUrl())
                 .build();
+    }
+
+    private boolean isBase64(String input) {
+        return input != null && input.startsWith("data:image/");
     }
 }
