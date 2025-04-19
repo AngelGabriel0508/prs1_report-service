@@ -4,6 +4,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import pe.edu.vallegrande.report_service.repository.ReportRepository;
+import pe.edu.vallegrande.report_service.repository.ReportWorkshopRepository;
+import pe.edu.vallegrande.report_service.repository.WorkshopCacheRepository;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
@@ -11,11 +13,23 @@ public class ReportServiceTest {
 
     private ReportService reportService;
     private ReportRepository reportRepository;
+    private ReportWorkshopRepository reportWorkshopRepository;
+    private WorkshopCacheRepository workshopCacheRepository;
+    private SupabaseStorageService supabaseStorageService;
 
     @BeforeEach
     void setUp() {
         reportRepository = Mockito.mock(ReportRepository.class);
-        reportService = new ReportService(reportRepository, null, null);
+        reportWorkshopRepository = Mockito.mock(ReportWorkshopRepository.class);
+        workshopCacheRepository = Mockito.mock(WorkshopCacheRepository.class);
+        supabaseStorageService = Mockito.mock(SupabaseStorageService.class);
+
+        reportService = new ReportService(
+                reportRepository,
+                reportWorkshopRepository,
+                workshopCacheRepository,
+                supabaseStorageService
+        );
     }
 
     @Test
