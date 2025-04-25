@@ -13,9 +13,9 @@ import pe.edu.vallegrande.report_service.repository.ReportWorkshopRepository;
 import pe.edu.vallegrande.report_service.repository.WorkshopCacheRepository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
 import java.time.LocalDate;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -29,11 +29,10 @@ public class ReportService {
     private final WorkshopCacheRepository workshopCacheRepo;
     private final SupabaseStorageService storageService;
 
-
     /**
      * 🔹 Obtener reportes con talleres filtrados por fecha + otros filtros
      */
-    public Flux<ReportWithWorkshopsDto> findFilteredReports(String status, String trimester, Integer year, LocalDate dateStart, LocalDate dateEnd) {
+    public Flux<ReportWithWorkshopsDto> findFilteredReports(String status, String trimester, Integer year, LocalDate workshopDateStart, LocalDate workshopDateEnd) {
         Flux<Report> baseQuery = (status != null) ? reportRepo.findByStatus(status) : reportRepo.findAll();
 
         if (trimester != null) {
@@ -45,28 +44,38 @@ public class ReportService {
 
         return baseQuery.flatMap(report ->
                 workshopRepo.findByReportId(report.getId())
-                        .flatMap(rw ->
-                                workshopCacheRepo.findById(rw.getWorkshopId())
+                        .flatMap(rw -> {
+                            ReportWorkshopDto dto = toWorkshopDto(rw);
+
+                            if (rw.getWorkshopId() != null) {
+                                return workshopCacheRepo.findById(rw.getWorkshopId())
                                         .filter(wc -> {
                                             boolean inRange = true;
-                                            if (dateStart != null) {
-                                                inRange = !wc.getDateStart().isBefore(dateStart);
-                                            }
-                                            if (dateEnd != null) {
-                                                inRange = inRange && !wc.getDateEnd().isAfter(dateEnd);
-                                            }
+                                            if (workshopDateStart != null) inRange = !wc.getDateStart().isBefore(workshopDateStart);
+                                            if (workshopDateEnd != null) inRange = inRange && !wc.getDateEnd().isAfter(workshopDateEnd);
                                             return inRange;
                                         })
                                         .map(wc -> {
-                                            ReportWorkshopDto dto = toWorkshopDto(rw);
-                                            // 👉 Enriquecer DTO con datos del taller original
                                             dto.setWorkshopStatus(wc.getStatus());
-                                            dto.setDateStart(wc.getDateStart());
-                                            dto.setDateEnd(wc.getDateEnd());
-                                            dto.setName(wc.getName());
+                                            dto.setWorkshopDateStart(wc.getDateStart());
+                                            dto.setWorkshopDateEnd(wc.getDateEnd());
+                                            dto.setWorkshopName(wc.getName());
                                             return dto;
-                                        })
-                        )
+                                        });
+                            } else {
+                                boolean inRange = true;
+
+                                if (workshopDateStart != null && rw.getWorkshopDateStart() != null) {
+                                    inRange = !rw.getWorkshopDateStart().isBefore(workshopDateStart);
+                                }
+
+                                if (workshopDateEnd != null && rw.getWorkshopDateEnd() != null) {
+                                    inRange = inRange && !rw.getWorkshopDateEnd().isAfter(workshopDateEnd);
+                                }
+
+                                return inRange ? Mono.just(dto) : Mono.empty();
+                            }
+                        })
                         .collectList()
                         .filter(list -> !list.isEmpty())
                         .map(workshops -> {
@@ -78,35 +87,46 @@ public class ReportService {
         );
     }
 
+
     /**
      * 🔹 Obtener por ID con talleres filtrados por fechas
      */
-    public Mono<ReportWithWorkshopsDto> findByIdWithDateFilter(Integer id, LocalDate dateStart, LocalDate dateEnd) {
+    public Mono<ReportWithWorkshopsDto> findByIdWithDateFilter(Integer id, LocalDate workshopDateStart, LocalDate workshopDateEnd) {
         Mono<Report> reportMono = reportRepo.findById(id);
 
         Flux<ReportWorkshopDto> workshopsFlux = workshopRepo.findByReportId(id)
-                .flatMap(rw ->
-                        workshopCacheRepo.findById(rw.getWorkshopId())
+                .flatMap(rw -> {
+                    ReportWorkshopDto dto = toWorkshopDto(rw);
+
+                    if (rw.getWorkshopId() != null) {
+                        return workshopCacheRepo.findById(rw.getWorkshopId())
                                 .filter(wc -> {
                                     boolean inRange = true;
-                                    if (dateStart != null) {
-                                        inRange = !wc.getDateStart().isBefore(dateStart);
-                                    }
-                                    if (dateEnd != null) {
-                                        inRange = inRange && !wc.getDateEnd().isAfter(dateEnd);
-                                    }
+                                    if (workshopDateStart != null) inRange = !wc.getDateStart().isBefore(workshopDateStart);
+                                    if (workshopDateEnd != null) inRange = inRange && !wc.getDateEnd().isAfter(workshopDateEnd);
                                     return inRange;
                                 })
                                 .map(wc -> {
-                                    ReportWorkshopDto dto = toWorkshopDto(rw);
-                                    // Enriquecer el DTO con datos del cache
                                     dto.setWorkshopStatus(wc.getStatus());
-                                    dto.setDateStart(wc.getDateStart());
-                                    dto.setDateEnd(wc.getDateEnd());
-                                    dto.setName(wc.getName());
+                                    dto.setWorkshopDateStart(wc.getDateStart());
+                                    dto.setWorkshopDateEnd(wc.getDateEnd());
+                                    dto.setWorkshopName(wc.getName());
                                     return dto;
-                                })
-                );
+                                });
+                    } else {
+                        boolean inRange = true;
+
+                        if (workshopDateStart != null && rw.getWorkshopDateStart() != null) {
+                            inRange = !rw.getWorkshopDateStart().isBefore(workshopDateStart);
+                        }
+
+                        if (workshopDateEnd != null && rw.getWorkshopDateEnd() != null) {
+                            inRange = inRange && !rw.getWorkshopDateEnd().isAfter(workshopDateEnd);
+                        }
+
+                        return inRange ? Mono.just(dto) : Mono.empty();
+                    }
+                });
 
         return Mono.zip(reportMono, workshopsFlux.collectList(), (report, workshops) -> {
             ReportWithWorkshopsDto dto = new ReportWithWorkshopsDto();
@@ -116,54 +136,52 @@ public class ReportService {
         });
     }
 
+
     /**
-     * 🔹 Crear reporte con talleres
+     * 🔹 Crear reporte con talleres (con soporte para talleres personalizados o reales)
      */
     public Mono<ReportWithWorkshopsDto> create(ReportWithWorkshopsDto dto) {
         Report report = fromDto(dto.getReport());
         report.setStatus("A");
 
-        List<ReportWorkshop> workshops = dto.getWorkshops().stream()
-                .map(this::fromWorkshopDto)
-                .collect(Collectors.toList());
-
         String rawSchedule = dto.getReport().getSchedule();
-
-        Mono<String> scheduleMono;
-        if (rawSchedule == null) {
-            scheduleMono = Mono.just(""); // o Mono.empty() si prefieres
-        } else if (isBase64(rawSchedule)) {
-            scheduleMono = storageService.uploadBase64Image("reports/schedules", rawSchedule);
-        } else {
-            scheduleMono = Mono.just(rawSchedule);
-        }
+        Mono<String> scheduleMono = (rawSchedule == null)
+                ? Mono.just("")
+                : isBase64(rawSchedule)
+                ? storageService.uploadBase64Image("reports/schedules", rawSchedule)
+                : Mono.just(rawSchedule);
 
         return scheduleMono.flatMap(scheduleUrl -> {
             report.setSchedule(scheduleUrl);
-
             return reportRepo.save(report)
-                    .flatMap(saved -> Flux.fromIterable(workshops)
-                            .flatMap(workshop -> Flux.fromIterable(dto.getWorkshops())
-                                    .filter(dtoW -> dtoW.getWorkshopId().equals(workshop.getWorkshopId()))
-                                    .next()
-                                    .flatMapMany(dtoW -> Flux.fromIterable(Arrays.asList(dtoW.getImageUrl()))
-                                            .flatMap(image -> isBase64(image)
-                                                    ? storageService.uploadBase64Image("reports/workshops", image)
-                                                    : Mono.just(image)
-                                            )
-                                    )
+                    .flatMap(saved -> Flux.fromIterable(dto.getWorkshops())
+                            .flatMap(dtoW -> Flux.fromArray(dtoW.getImageUrl())
+                                    .flatMap(image -> isBase64(image)
+                                            ? storageService.uploadBase64Image("reports/workshops", image)
+                                            : Mono.just(image))
                                     .collectList()
-                                    .map(urls -> {
-                                        workshop.setReportId(saved.getId());
-                                        workshop.setImageUrl(urls.toArray(new String[0]));
-                                        return workshop;
-                                    })
-                            )
+                                    .flatMap(images -> {
+                                        ReportWorkshop rw = fromWorkshopDto(dtoW);
+                                        rw.setReportId(saved.getId());
+                                        rw.setImageUrl(images.toArray(new String[0]));
+
+                                        if (rw.getWorkshopId() != null) {
+                                            return workshopCacheRepo.findById(rw.getWorkshopId())
+                                                    .map(cache -> {
+                                                        rw.setWorkshopName(cache.getName());
+                                                        rw.setWorkshopDateStart(cache.getDateStart());
+                                                        rw.setWorkshopDateEnd(cache.getDateEnd());
+                                                        return rw;
+                                                    });
+                                        } else {
+                                            return Mono.just(rw);
+                                        }
+                                    }))
                             .collectList()
-                            .flatMap(savedWorkshops -> workshopRepo.saveAll(savedWorkshops).collectList())
+                            .flatMap(workshops -> workshopRepo.saveAll(workshops).collectList())
                             .map(savedWorkshops -> {
                                 ReportWithWorkshopsDto response = new ReportWithWorkshopsDto();
-                                response.setReport(toDto(saved));
+                                response.setReport(toDto(report));
                                 response.setWorkshops(savedWorkshops.stream().map(this::toWorkshopDto).toList());
                                 log.info("✅ Reporte creado: {}", response);
                                 return response;
@@ -172,7 +190,7 @@ public class ReportService {
     }
 
     /**
-     * 🔹 Editar reporte y reemplazar talleres
+     * 🔹 Editar reporte y reemplazar talleres (con manejo de imágenes en Supabase)
      */
     public Mono<ReportWithWorkshopsDto> update(Integer id, ReportWithWorkshopsDto dto) {
         return reportRepo.findById(id)
@@ -194,26 +212,18 @@ public class ReportService {
                         return workshopRepo.findByReportId(id)
                                 .collectList()
                                 .flatMap(oldWorkshops -> {
-                                    // Obtener todas las URLs antiguas
                                     List<String> oldUrls = oldWorkshops.stream()
-                                            .flatMap(rw -> rw.getImageUrl() == null ?
-                                                    Stream.empty() :
-                                                    Arrays.stream(rw.getImageUrl()))
+                                            .flatMap(rw -> rw.getImageUrl() == null ? Stream.empty() : Arrays.stream(rw.getImageUrl()))
                                             .collect(Collectors.toList());
 
-                                    // Obtener nuevas URLs desde el DTO
                                     List<String> newUrls = dto.getWorkshops().stream()
-                                            .flatMap(w -> w.getImageUrl() == null ?
-                                                    Stream.empty() :
-                                                    Arrays.stream(w.getImageUrl()))
+                                            .flatMap(w -> w.getImageUrl() == null ? Stream.empty() : Arrays.stream(w.getImageUrl()))
                                             .collect(Collectors.toList());
 
-                                    // Determinar cuáles eliminar
                                     List<String> toDelete = oldUrls.stream()
                                             .filter(url -> !newUrls.contains(url))
                                             .collect(Collectors.toList());
 
-                                    // Ejecutar eliminación en Supabase
                                     return Flux.fromIterable(toDelete)
                                             .flatMap(storageService::deleteImage)
                                             .then();
@@ -223,17 +233,26 @@ public class ReportService {
                                         .flatMap(dtoW -> Flux.fromIterable(Arrays.asList(dtoW.getImageUrl()))
                                                 .flatMap(image -> isBase64(image)
                                                         ? storageService.uploadBase64Image("reports/workshops", image)
-                                                        : Mono.just(image)
-                                                )
+                                                        : Mono.just(image))
                                                 .collectList()
-                                                .map(urls -> {
+                                                .flatMap(images -> {
                                                     ReportWorkshop rw = fromWorkshopDto(dtoW);
                                                     rw.setReportId(saved.getId());
-                                                    rw.setId(null); // Forzar INSERT
-                                                    rw.setImageUrl(urls.toArray(new String[0]));
-                                                    return rw;
-                                                })
-                                        )
+                                                    rw.setId(null);
+                                                    rw.setImageUrl(images.toArray(new String[0]));
+
+                                                    if (rw.getWorkshopId() != null) {
+                                                        return workshopCacheRepo.findById(rw.getWorkshopId())
+                                                                .map(cache -> {
+                                                                    rw.setWorkshopName(cache.getName());
+                                                                    rw.setWorkshopDateStart(cache.getDateStart());
+                                                                    rw.setWorkshopDateEnd(cache.getDateEnd());
+                                                                    return rw;
+                                                                });
+                                                    } else {
+                                                        return Mono.just(rw);
+                                                    }
+                                                }))
                                         .collectList()
                                         .flatMap(newList -> workshopRepo.deleteByReportId(id)
                                                 .then(workshopRepo.saveAll(newList).collectList()))
@@ -258,7 +277,6 @@ public class ReportService {
                     return reportRepo.save(r).then();
                 });
     }
-
 
     /**
      * 🔹 Eliminación lógica (status = I)
@@ -291,7 +309,7 @@ public class ReportService {
                 .trimester(dto.getTrimester())
                 .description(dto.getDescription())
                 .schedule(dto.getSchedule())
-                .status("A") // Siempre lo forzamos al crear
+                .status("A")
                 .build();
     }
 
@@ -301,6 +319,8 @@ public class ReportService {
         dto.setReportId(rw.getReportId());
         dto.setWorkshopId(rw.getWorkshopId());
         dto.setWorkshopName(rw.getWorkshopName());
+        dto.setWorkshopDateStart(rw.getWorkshopDateStart());
+        dto.setWorkshopDateEnd(rw.getWorkshopDateEnd());
         dto.setDescription(rw.getDescription());
         dto.setImageUrl(rw.getImageUrl());
         return dto;
@@ -312,6 +332,8 @@ public class ReportService {
                 .reportId(dto.getReportId())
                 .workshopId(dto.getWorkshopId())
                 .workshopName(dto.getWorkshopName())
+                .workshopDateStart(dto.getWorkshopDateStart())
+                .workshopDateEnd(dto.getWorkshopDateEnd())
                 .description(dto.getDescription())
                 .imageUrl(dto.getImageUrl())
                 .build();
