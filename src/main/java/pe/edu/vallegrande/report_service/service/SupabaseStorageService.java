@@ -10,6 +10,8 @@ import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.UUID;
 
@@ -75,14 +77,22 @@ public class SupabaseStorageService {
     public Mono<Void> deleteImage(String publicUrl) {
         if (!StringUtils.hasText(publicUrl)) return Mono.empty();
 
-        String[] parts = publicUrl.split("/object/public/");
-        if (parts.length < 2) return Mono.empty();
-        String objectPath = parts[1];
+        try {
+            String[] parts = publicUrl.split("/object/public/");
+            if (parts.length < 2) return Mono.empty();
+            String objectPath = URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
 
-        return webClient.delete()
-                .uri(uriBuilder -> uriBuilder.path("/object/{bucket}/{path}")
-                        .build(bucket, objectPath))
-                .retrieve()
-                .bodyToMono(Void.class);
+            // Asegúrate de que el objectPath no contenga partes duplicadas
+            String correctPath = objectPath.replaceFirst("^" + bucket + "/", "");
+
+            return webClient.delete()
+                    .uri("/object/" + bucket + "/" + correctPath)
+                    .retrieve()
+                    .bodyToMono(Void.class);
+
+        } catch (Exception e) {
+            log.error("❌ Error al eliminar imagen de Supabase:", e);
+            return Mono.empty();
+        }
     }
 }

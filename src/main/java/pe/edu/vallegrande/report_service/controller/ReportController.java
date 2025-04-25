@@ -25,10 +25,10 @@ public class ReportController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String trimester,
             @RequestParam(required = false) Integer year,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateStart,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateEnd
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate workshopDateStart,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate workshopDateEnd
     ) {
-        return service.findFilteredReports(status, trimester, year, dateStart, dateEnd);
+        return service.findFilteredReports(status, trimester, year, workshopDateStart, workshopDateEnd);
     }
 
     /**
@@ -37,10 +37,10 @@ public class ReportController {
     @GetMapping("/{id}/filtered")
     public Mono<ReportWithWorkshopsDto> getById(
             @PathVariable Integer id,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateStart,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateEnd
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate workshopDateStart,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate workshopDateEnd
     ) {
-        return service.findByIdWithDateFilter(id, dateStart, dateEnd);
+        return service.findByIdWithDateFilter(id, workshopDateStart, workshopDateEnd);
     }
 
 
